@@ -15,6 +15,10 @@ done in `plan`. This guarantees: what the user saw in `git diff` after
 
 ## Procedure
 
+Run each command below as a separate terminal tool call. Do NOT chain
+multiple steps into one compound command with `&&` — the security
+scanner blocks compound commands whose full effect it cannot analyze.
+
 1. Acquire the git lock:
 
    ```
@@ -37,8 +41,14 @@ done in `plan`. This guarantees: what the user saw in `git diff` after
 3. Decide the target branch (should match what `plan` checked out):
 
    ```
-   eval "$(bash ${HERMES_SKILL_DIR}/scripts/get_apply_branch.sh <PR-number>)"
+   bash ${HERMES_SKILL_DIR}/scripts/get_apply_branch.sh <PR-number> > /tmp/apply-branch.env
+   TARGET_BRANCH=$(grep '^TARGET_BRANCH=' /tmp/apply-branch.env | cut -d= -f2-)
+   BRANCH_MODE=$(grep '^BRANCH_MODE=' /tmp/apply-branch.env | cut -d= -f2-)
    ```
+
+   Do NOT use `eval` on the script output — the security scanner
+   cannot analyze dynamically generated command bodies and blocks the
+   command.
 
 4. Verify we're on the right branch:
    ```
@@ -62,11 +72,13 @@ done in `plan`. This guarantees: what the user saw in `git diff` after
    ```
 
    Do NOT use `git add -A` or `git add .` — they stage untracked
-   environment artifacts (like `AGENTS.md`) that the user never saw
-   in the plan diff. Use `git status --porcelain` to identify the
-   changed files, then `git add` each one explicitly. If untracked
-   files appear that aren't part of the plan, leave them unstaged and
-   mention them in your Slack post.
+   environment artifacts that the user never saw in the plan diff.
+   Use `git status --porcelain` to identify the changed files, then
+   `git add` each one explicitly. `AGENTS.md` in the repo root is a
+   read-only environment mount that is always untracked — never
+   stage it and never mention it in Slack. Other untracked files
+   that aren't part of the plan should be left unstaged and
+   mentioned in your Slack post.
 
 7. Push to origin:
    ```

@@ -42,7 +42,7 @@ API_KEY="${OPENAI_API_KEY:-}"
 if [ -z "$API_KEY" ]; then
     API_KEY=$(grep '^OPENAI_API_KEY=' /opt/data/.env 2>/dev/null | cut -d= -f2-)
 fi
-MODEL="${OPENAI_MODEL:-moonshotai/Kimi-K2.7-Code}"
+MODEL="${OPENAI_MODEL:-zai-org/GLM-5.2}"
 GRUMPY_PERSONALITY="${GRUMPY_PERSONALITY:-/opt/data/cscs-reframe-tests/.opencode/agents/grumpy-reviewer.md}"
 
 # Use the Hermes-managed gh wrapper if available.
@@ -145,7 +145,7 @@ req = urllib.request.Request(
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.4,
-        "max_tokens": 2048
+        "max_tokens": 16384
     }).encode(),
     headers={
         "Content-Type": "application/json",
@@ -154,9 +154,27 @@ req = urllib.request.Request(
     method="POST"
 )
 
-with urllib.request.urlopen(req, timeout=120) as resp:
+with urllib.request.urlopen(req, timeout=300) as resp:
     result = json.loads(resp.read())
-    review = result["choices"][0]["message"]["content"].strip()
+
+# Reasoning models (e.g. GLM-5.2) spend max_tokens on the reasoning
+# chain first; if the budget runs out during reasoning, content is
+# null and finish_reason is "length". Fail with diagnostics instead
+# of crashing on .strip().
+choice = result["choices"][0]
+message = choice.get("message") or {}
+content = message.get("content")
+reasoning = message.get("reasoning") or message.get("reasoning_content")
+if not content or not content.strip():
+    sys.exit(
+        "ERROR: model returned no review content "
+        f"(finish_reason={choice.get('finish_reason')!r}, "
+        f"completion_tokens={result.get('usage', {}).get('completion_tokens')}, "
+        f"reasoning_present={bool(reasoning)}). "
+        "Output budget likely consumed by reasoning - "
+        "retry, or set OPENAI_MODEL to another model."
+    )
+review = content.strip()
 
 review = header + review
 

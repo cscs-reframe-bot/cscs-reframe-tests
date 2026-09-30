@@ -2,6 +2,8 @@
 # update_branch.sh — Sync the current bot/ branch with upstream/main
 # Usage: update_branch.sh <branch-name>
 # The branch name is the bot/ branch to update (e.g., bot/pr-660-fix-xyz).
+# Behaves like GitHub's "Update branch" button: fetch, merge, push.
+# No test validation — GitHub CI covers that on push.
 set -euo pipefail
 
 REPO_DIR="/opt/data/cscs-reframe-tests"
@@ -21,19 +23,17 @@ if [[ "$BRANCH" != bot/* ]]; then
     exit 1
 fi
 
-# Ensure we're on the right branch
-git checkout "$BRANCH"
+# Ensure we're on the right branch (quiet: the switch message is noise)
+git checkout -q "$BRANCH"
 
-# Fetch upstream
-git fetch upstream
+# Fetch upstream (quiet: the refspec update line is noise)
+git fetch -q upstream
 
-# Check if check files changed between HEAD and upstream/main
-CHECK_FILES_CHANGED=$(git diff --name-only HEAD upstream/main -- checks/ 2>/dev/null | head -1)
-
-# Merge main into the current branch
+# Merge main into the current branch. Git prints the diffstat — keep it,
+# it is the useful part of the output.
 echo "Merging upstream/main into $BRANCH..."
 if git merge upstream/main --no-edit; then
-    echo "Merge successful."
+    :
 else
     echo
     echo "MERGE CONFLICTS DETECTED"
@@ -44,19 +44,9 @@ else
     exit 1
 fi
 
-# ReFrame dry-run if check files changed
-if [ -n "$CHECK_FILES_CHANGED" ]; then
-    echo
-    echo "Check files changed — running ReFrame dry-run..."
-    if ! reframe --dry-run -C config/cscs.py --system generic 2>&1; then
-        echo "WARNING: ReFrame dry-run failed. Check syntax manually."
-    fi
-fi
-
-# Push the updated branch
-echo
-echo "Pushing updated branch..."
-git push origin "$BRANCH"
+# Push the updated branch (quiet: the push refspec output is noise)
+git push -q origin "$BRANCH"
+echo "Pushed to origin."
 
 echo
 echo "Branch $BRANCH updated successfully."

@@ -62,7 +62,8 @@ print("What would you like me to do?")
 print("- `review` \u2014 fetch the diff and post a review comment on the PR")
 print("- `summarize` \u2014 generate a PR description following the repo template")
 print("- `status` \u2014 show a PR readiness checklist")
-print("- `update branch` \u2014 sync the current branch with the latest main")
+if head.startswith("bot/"):
+    print("- `update branch` \u2014 sync this bot branch with the latest main")
 print("- `plan [instructions]` \u2014 propose a design/plan for any task (no code changes)")
 print("- `apply` \u2014 implement the agreed plan and open/update the PR")
 PYEOF
