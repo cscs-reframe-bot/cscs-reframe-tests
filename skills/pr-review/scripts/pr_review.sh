@@ -118,6 +118,24 @@ else:
     user_prefix = ""
     header = f"🤖 Bot-generated review for PR #{pr_number}\n\n"
 
+# Include lessons from previous reviews (Hermes memory). The bot
+# saves generalizable rules here via the `memory` tool when a
+# maintainer corrects or dismisses findings (SOUL.md rule 9).
+# This prevents the LLM from repeating the same false positives.
+hermes_home = os.environ.get("HERMES_HOME", "/opt/data")
+memory_path = os.path.join(hermes_home, "memories", "MEMORY.md")
+if os.path.exists(memory_path):
+    with open(memory_path, encoding="utf-8") as f:
+        memory_content = f.read().strip()
+    if memory_content:
+        system_msg += (
+            "\n\n## Lessons from previous reviews\n"
+            "The following lessons have been learned from previous "
+            "review corrections. Do NOT repeat findings that "
+            "contradict these lessons:\n\n"
+            + memory_content
+        )
+
 prompt = f"""{user_prefix}You are reviewing a pull request for the {repo} repository.
 Provide a concise, actionable code review based on the diff below.
 

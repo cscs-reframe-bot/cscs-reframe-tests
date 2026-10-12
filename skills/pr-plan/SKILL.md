@@ -71,6 +71,24 @@ scanner blocks compound commands whose full effect it cannot analyze.
      git checkout -b "$TARGET_BRANCH" upstream/main
      ```
 
+4b. Rebase on latest upstream/main (prevents stale-branch conflicts
+    when main has advanced since the branch was created — e.g. PR
+    #671 conflicted because PR #669 and #660 merged to main after
+    the bot branch was based on an older commit):
+
+    ```
+    git fetch upstream
+    git rebase upstream/main
+    ```
+
+    If the rebase fails (conflicts), post the conflicting file names
+    to Slack (`git diff --name-only --diff-filter=U`), run
+    `git rebase --abort`, and stop. Do NOT attempt to resolve
+    conflicts automatically — the user needs to decide.
+
+    If `BRANCH_MODE=new` and the branch was just created from
+    `upstream/main`, the rebase is a fast-forward no-op.
+
 5. Delegate the implementation to a subagent (it runs on GLM-5.2 via
    `delegation.model`):
 
@@ -111,6 +129,25 @@ scanner blocks compound commands whose full effect it cannot analyze.
      git diff
      ```
      Post the diff to Slack verbatim — this is what `apply` will commit.
+
+     If the user asked for a PR description, generate one following the
+     repo template at
+     `/opt/data/cscs-reframe-tests/.github/pull_request_template.md`.
+     For the Testing section, reason about which CI modes are relevant.
+     Use `cscs-ci run alps-<system>` commands (NOT `gh workflow run` —
+     that only triggers the lint job). Read the PR template for the
+     full syntax and examples.
+
+     - Check the test's tags and `valid_prog_environs`. If tagged
+       `uenv`, UENV CI is the primary path — non-UENV examples are
+       likely not needed (and vice versa).
+     - Pick one or two representative systems per relevant CI mode, not
+       all systems. If the user mentioned a specific system, include it.
+     - Keep the Testing section to 2-4 commands total — an exhaustive
+       list is noise.
+     - If the PR introduces an opt-in option (e.g. `flexible=True`),
+       include one example showing how to test it via
+       `CSCS_RFM_EXTRA`.
    - On failure or interruption: post the error to Slack, then discard
      any partial changes with `git checkout -- .` followed by
      `git clean -fd` (as separate commands), and stop.

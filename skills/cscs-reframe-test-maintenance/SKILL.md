@@ -41,32 +41,44 @@ mixed into the build/runtime block.
 
 ## Procedure
 
-1. Before planning a move, read the current file and identify the exact
-   neighbor attributes the user named. Do not treat "earlier" as
-   "anywhere in the first half of the class."
+Follow the curated pr-plan and pr-apply skills. This skill adds domain-specific knowledge only.
 
-2. Run `plan` via the `pr-plan` skill. After writing the change, run
-   `python3 -m py_compile <file>` and show the diff with `git diff`.
+## Bulk symbol replacements
 
-3. If `git diff` is empty, stop. Tell the user the file already matches
-   the requested state and ask whether they want a different placement
-   or an explicit no-op commit. Do not ask for `apply`.
+When the user asks to replace a symbol globally in a test attribute
+(e.g. `maintainers`, tags, system names), treat it like any other plan
+but add these checks:
 
-4. When `apply` runs, stage only the files that the plan modified. Do
-   not use `git add -A` — it commits untracked environment artifacts.
-   If `git status --porcelain` shows untracked files that reappear after
-   cleanup, leave them out of the commit.
+1. Scope the replacement to the attribute requested. Use a regex that
+   matches the attribute assignment line, not a bare text substitute,
+   so you do not rewrite unrelated occurrences such as JIRA ticket IDs,
+   URLs, comments, or other string literals.
 
-5. After pushing, verify the PR state with `gh pr view` and post the
-   commit hash and PR URL to Slack.
+2. Handle both single and double quote styles. A search that only
+   matches one will silently miss files using the other.
+
+3. After the replacement, grep the tree for the old symbol one more
+   time. Confirm that the only remaining occurrences are the unrelated
+   ones the user intended to keep (e.g. historic JIRA references).
+
+4. Present the result as a per-test-class table with the columns the
+   user asked for. Default columns: test class name, current attribute
+   value, updated attribute value. Avoid file-level summaries when
+   multiple classes are touched in one file.
 
 ## Pitfalls
 
+- A requested move may already be partially satisfied. Verify against
+  the exact target neighbor, not the general area of the class.
 - `git checkout -- .` reverts tracked changes but leaves untracked files
   behind. Use `git clean -fd` as well when resetting a plan, then
   inspect `git status --porcelain` for persistent artifacts.
 - `git add -A` stages files like `AGENTS.md` that are sometimes mounted
   into the repo root by the environment. Stage intended files
   explicitly.
-- A requested move may already be partially satisfied. Verify against
-  the exact target neighbor, not the general area of the class.
+- When a maintainer corrects or dismisses your review findings, save
+  each lesson via the memory tool (SOUL.md rule 9). Focus on
+  generalizable rules.
+- When including the requestor in a PR description, use their Slack
+  @username or real name — never the raw member ID (U...), which doesn't
+  render on GitHub.

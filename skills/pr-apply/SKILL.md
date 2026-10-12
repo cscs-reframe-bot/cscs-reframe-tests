@@ -34,9 +34,11 @@ scanner blocks compound commands whose full effect it cannot analyze.
    git status --porcelain
    ```
 
-   If the output is empty, post to Slack:
-   "Nothing to apply — the plan phase did not create any changes. Run
-   `plan ...` first." Stop. Do NOT generate code yourself.
+   If the output is empty, check whether the plan was a **PR
+   description/title update only** (no code changes expected). If so,
+   skip to step 8 to update the PR body via `gh api`. Otherwise, post
+   to Slack: "Nothing to apply — the plan phase did not create any
+   changes. Run `plan ...` first." Stop. Do NOT generate code yourself.
 
 3. Decide the target branch (should match what `plan` checked out):
 
@@ -80,14 +82,38 @@ scanner blocks compound commands whose full effect it cannot analyze.
    that aren't part of the plan should be left unstaged and
    mentioned in your Slack post.
 
-7. Push to origin:
+7. Rebase on latest upstream/main before pushing (prevents stale-
+   branch conflicts when main has advanced during the plan→apply
+   gap):
+   ```
+   git fetch upstream
+   git rebase upstream/main
+   ```
+
+   If the rebase fails (conflicts), post the conflicting file names
+   to Slack (`git diff --name-only --diff-filter=U`), run
+   `git rebase --abort`, and stop. Do NOT force-push to work
+   around conflicts — tell the user and let them decide.
+
+8. Push to origin:
    ```
    git push origin "$TARGET_BRANCH"
    ```
 
-8. Open or update the PR:
-   - If `BRANCH_MODE=existing`: the PR already exists — confirm it was
-     updated and post the PR URL.
+   If the push is rejected (non-fast-forward because main advanced
+   between step 7 and now), repeat steps 7-8. Do NOT use `--force`.
+
+9. Open or update the PR:
+   - If `BRANCH_MODE=existing`: the PR already exists.
+     - If only the code changed (no title/body update needed), confirm
+       it was updated and post the PR URL.
+     - If the user also asked to update the PR title or body, use the
+       REST API directly. `gh pr edit` fails with a Projects (classic)
+       deprecation error on this GitHub instance:
+       ```
+       gh api repos/eth-cscs/cscs-reframe-tests/pulls/<number> \
+           -X PATCH -f title="..." -f body="..."
+       ```
    - If `BRANCH_MODE=new`:
      ```
      gh pr create --repo eth-cscs/cscs-reframe-tests \
@@ -97,4 +123,4 @@ scanner blocks compound commands whose full effect it cannot analyze.
          --body "<proposed fix summary and link to original PR>"
      ```
 
-9. Post the diff and the PR URL to Slack.
+10. Post the diff and the PR URL to Slack.
