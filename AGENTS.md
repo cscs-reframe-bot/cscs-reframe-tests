@@ -152,6 +152,15 @@ To override the group, pass it explicitly:
 reframe -C config/cscs.py --system starlex:normal -J--account=csstaff ...
 ```
 
+### GRES flags
+
+`SLURM_GRES_FLAGS=allow-task-sharing` should **not** be set in
+ReFrame-only environments (pipeline script or partition `env_vars`),
+because it gives tests an environment users don't have and can mask
+real issues.  Prefer the opt-in CLI flag
+`--gres-flags=allow-task-sharing` at the test level.  Making the
+variable available to everyone is a Slurm-level decision.  (see PR #678)
+
 ### Uenvs — required for non-builtin tests
 
 By default only the `builtin` environ is available on each `normal`
@@ -327,3 +336,19 @@ including `rocm`, `mpi`, and `prgenv`.
 6. **GitHub diff truncation**: Diff truncation in GitHub PRs can
    create false "missing entry" findings.  Verify the full source file
    before claiming a list or dict is incomplete.  (see PR #666)
+7. **Performance reference values**: ReFrame performance checks should
+   include reference values, otherwise they can never fail on a
+   performance regression.  (see PR #678)
+8. **Document new tests/features**: Add documentation for new tests or
+   features to `portable_tests.md` or `pending-maintenance-features.md`
+   so users know what they exercise and how to use them.  (see PR #678)
+9. **Reuse existing partition attributes**: Reuse existing partition
+   attributes/variables (e.g. entries already in `curr_part.features`)
+   instead of recomputing or re-deriving the same value in test code.
+   (see PR #678)
+10. **Push env dependencies to test bases**: When multiple test bases
+    depend on an environment variable such as
+    `SLURM_GRES_FLAGS=allow-task-sharing`, add the conditional flag to
+    each affected test base rather than the pipeline/framework
+    environment, so fresh-shell manual runs and nightly prod runs
+    behave the same.  (see PR #678)
