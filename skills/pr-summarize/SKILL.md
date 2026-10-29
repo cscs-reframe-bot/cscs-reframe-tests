@@ -12,9 +12,8 @@ thread (the plan step posted it); if the context has scrolled,
 recover it from the per-thread registry
 (`bash ${HERMES_SKILL_DIR}/../lib/worktree.sh status <slug>`).
 Fetch the diff from the worktree when one exists — a thread
-without a worktree uses the main repo
-(`/opt/data/cscs-reframe-tests`) for both the diff and the
-template. Read the PR template from
+without a worktree has no local diff: for an existing PR, fetch
+it with `gh pr diff <number>` instead. Read the PR template from
 `<WORKTREE>/.github/pull_request_template.md` (or
 `/opt/data/cscs-reframe-tests/.github/pull_request_template.md`
 when this thread has no worktree) and generate a PR description
