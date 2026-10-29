@@ -189,9 +189,6 @@ git for-each-ref --format='%(refname:short)' refs/heads/bot
 - `git add -A` stages files like `AGENTS.md` that are sometimes mounted
   into the repo root by the environment. Stage intended files
   explicitly.
-- `pr-plan` worktrees start from `upstream/main`, not the PR head. If
-  the target code only exists on the PR branch, a subagent will search
-  in vain unless you rebase onto the PR head first.
 - `AGENTS.md` is replaced by a symlink to the environment mount after
   worktree creation and after any `git checkout` that restores it. That
   symlink shows as a type-change (`T`) in `git status` and appears in
