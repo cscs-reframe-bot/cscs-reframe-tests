@@ -42,7 +42,7 @@ API_KEY="${OPENAI_API_KEY:-}"
 if [ -z "$API_KEY" ]; then
     API_KEY=$(grep '^OPENAI_API_KEY=' /opt/data/.env 2>/dev/null | cut -d= -f2-)
 fi
-MODEL="${OPENAI_MODEL:-zai-org/GLM-5.2}"
+MODEL="${OPENAI_MODEL:-zai-org/GLM-5.3}"
 GRUMPY_PERSONALITY="${GRUMPY_PERSONALITY:-/opt/data/cscs-reframe-tests/.opencode/agents/grumpy-reviewer.md}"
 
 # Use the Hermes-managed gh wrapper if available.
@@ -79,7 +79,10 @@ if [ -z "$DIFF" ]; then
     exit 1
 fi
 
-GENERATED_FILE="/tmp/review-${PR_NUMBER}.txt"
+# Session-unique temp file (plain mktemp, the pattern pr_status.sh
+# uses): concurrent reviews of the same PR from different Slack
+# threads must not clobber each other's generated text.
+GENERATED_FILE="$(mktemp)"
 
 echo "Generating review via $MODEL ..." >&2
 API_BASE="$API_BASE" API_KEY="$API_KEY" MODEL="$MODEL" \
@@ -175,7 +178,7 @@ req = urllib.request.Request(
 with urllib.request.urlopen(req, timeout=300) as resp:
     result = json.loads(resp.read())
 
-# Reasoning models (e.g. GLM-5.2) spend max_tokens on the reasoning
+# Reasoning models (e.g. GLM-5.3) spend max_tokens on the reasoning
 # chain first; if the budget runs out during reasoning, content is
 # null and finish_reason is "length". Fail with diagnostics instead
 # of crashing on .strip().

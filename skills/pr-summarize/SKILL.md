@@ -6,16 +6,26 @@ description: >
   for a PR description.
 ---
 
-Fetch the diff and understand the change. Read the PR template from
-`/opt/data/cscs-reframe-tests/.github/pull_request_template.md` and
-generate a PR description following its structure.
+Fetch the diff and understand the change. Locate this thread's
+worktree first: the `WORKTREE=...` line appears earlier in this
+thread (the plan step posted it); if the context has scrolled,
+recover it from the per-thread registry
+(`bash ${HERMES_SKILL_DIR}/../lib/worktree.sh status <slug>`).
+Fetch the diff from the worktree when one exists — a thread
+without a worktree uses the main repo
+(`/opt/data/cscs-reframe-tests`) for both the diff and the
+template. Read the PR template from
+`<WORKTREE>/.github/pull_request_template.md` (or
+`/opt/data/cscs-reframe-tests/.github/pull_request_template.md`
+when this thread has no worktree) and generate a PR description
+following its structure.
 
 Include suggested `cscs-ci run` commands. Reason about which CI modes
 are relevant before listing them. Use `cscs-ci run alps-<system>` (NOT
 `gh workflow run` — that only triggers the lint job). Read the PR
-template at
-`/opt/data/cscs-reframe-tests/.github/pull_request_template.md` for
-the full syntax and examples.
+template at `<WORKTREE>/.github/pull_request_template.md` (or
+`/opt/data/cscs-reframe-tests/.github/pull_request_template.md`
+when this thread has no worktree) for the full syntax and examples.
 
 - Check the test's tags and `valid_prog_environs`. If tagged `uenv`,
   UENV CI is the primary path — non-UENV examples are likely not

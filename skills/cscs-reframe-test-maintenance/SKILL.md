@@ -14,10 +14,10 @@ through the `plan` → `apply` workflow.
 
 ## What this skill does
 
-Guards the `plan` → `apply` workflow used to maintain
-`eth-cscs/cscs-reframe-tests`. It does not replace `pr-plan` or
-`pr-apply`; it adds CSCS/ReFrame-specific checks and conventions that
-cost review rounds when missed.
+Guards the `plan` → `apply` workflow and the review-learning loop
+used to maintain `eth-cscs/cscs-reframe-tests`. It does not replace
+`pr-plan`, `pr-apply`, or `pr-learn`; it adds CSCS/ReFrame-specific
+checks and conventions that cost review rounds when missed.
 
 ## Class attribute ordering
 
@@ -66,6 +66,170 @@ but add these checks:
    value, updated attribute value. Avoid file-level summaries when
    multiple classes are touched in one file.
 
+## When to short-circuit `pr-plan`
+
+The curated `pr-plan` skill creates a worktree from `upstream/main` and
+delegates to a subagent. For some small CSCS/ReFrame edits this is
+overkill and can land on the wrong base. Prefer a direct edit when all
+of these hold:
+
+- The change is scoped to a single, known ReFrame test attribute (e.g.
+  `maintainers`, `valid_systems`, a tag) or a one-line fix.
+- The target file and class are identifiable from the PR diff or a
+  quick grep.
+- Validation is just `python3 -m py_compile <file>` (and optionally
+  `reframe --dry-run`).
+
+In that case skip the subagent: rebase the worktree onto the PR head,
+make the edit, validate, and show the diff. This avoids long
+subagent runs and prevents the common failure mode where the target
+attribute exists only on the PR branch, not on `upstream/main`.
+
+## Rebasing a worktree onto a PR head
+
+`pr-plan` checks out the new branch from `upstream/main`. If the user's
+request concerns code introduced or modified by the PR itself, rebase
+the worktree onto the PR head before editing:
+
+```
+cd <WORKTREE>
+git fetch upstream pull/<PR>/head:pr-<PR>-head
+```
+
+Before rebasing, check `git status --porcelain`. The environment mount
+replaces `AGENTS.md` with a symlink, which git reports as a type-change
+(`T`). That unstaged change blocks `git rebase`, so resolve it first by
+restoring the PR's actual `AGENTS.md` content:
+
+```
+git checkout pr-<PR>-head -- AGENTS.md
+```
+
+Then rebase:
+
+```
+git rebase --onto pr-<PR>-head upstream/main
+```
+
+Then verify the target attribute is present in the file, edit it,
+run `python3 -m py_compile <file>`, and show `git diff`. Do not stage
+`AGENTS.md` when committing; stage only the intended test files.
+
+## Adopting an existing bot/ branch into a thread worktree
+
+Branches created before the per-thread worktree refactor (or pushed
+from another context) are checked out in the main repo, not a thread
+worktree. Adopt them manually instead of using `worktree.sh create`,
+which always mints a fresh branch from `upstream/main` and would
+discard the existing commits.
+
+Run each command as a separate terminal tool call:
+
+1. Release the branch from the main repo checkout:
+
+   ```
+   cd /opt/data/cscs-reframe-tests
+   git fetch origin
+   git checkout --detach
+   ```
+
+2. Create the thread worktree from the existing branch:
+
+   ```
+   git worktree add /opt/data/wt/<slug> <branch>
+   ```
+
+3. Register the worktree for the thread:
+
+   ```
+   printf '{"worktree":"/opt/data/wt/<slug>","branch":"<branch>","pr":<number>,"created":"YYYY-MM-DD"}\n' > /opt/data/wt/registry-<slug>.json
+   ```
+
+   Use the actual PR number if there is one; otherwise omit the `pr`
+   field or set it to `null`.
+
+4. Verify the worktree is on the right branch and head:
+
+   ```
+   cd /opt/data/wt/<slug>
+   git branch --show-current   # must print <branch>
+   git log -1 --oneline        # should show the expected tip commit
+   ```
+
+5. Post `WORKTREE=/opt/data/wt/<slug>` in the thread. From then on,
+   treat that path as this thread's workspace for plan/re-plan, update
+   branch, and apply.
+
+## Verifying worktree-sweep candidates
+
+The sweep script uses `gh pr list --repo eth-cscs/cscs-reframe-tests
+--head cscs-reframe-bot:<branch>` to decide whether a branch has a PR.
+That query can return empty for cross-fork PRs even when the PR is
+open, causing a false "no PR" stale candidate.
+
+Before agreeing to delete any candidate:
+
+1. Confirm the real PR state by number: `gh pr view <number> --repo
+   eth-cscs/cscs-reframe-tests --json state,headRefName`.
+2. If you do not know the number, retry the lookup with the bare
+   branch name: `gh pr list --repo eth-cscs/cscs-reframe-tests
+   --head <branch> --state all --json state,url`.
+3. Only treat the branch as truly PR-less after both lookups fail and
+   the age rule is satisfied.
+
+## Refreshing a PR branch after server-side merges
+
+GitHub's "Update branch" button creates merge commits on the server
+that may not exist in the local worktree. This leaves the local branch
+behind and can inflate staleness readings (e.g. the worktree sweep
+reports the branch age from the local tip, not the server tip).
+
+After adopting or returning to an existing PR worktree:
+
+1. Fetch the latest state:
+
+   ```
+   cd <WORKTREE>
+   git fetch origin
+   ```
+
+2. Fast-forward the local branch to the server tip:
+
+   ```
+   git merge --ff-only origin/<branch>
+   ```
+
+3. Verify the new tip: `git log -1 --oneline`.
+
+If fast-forward fails, the branch has local commits or diverged —
+stop and ask the user before rebasing or merging.
+
+## Deleting dirty worktrees and branches
+
+Before force-removing a worktree the sweep marked `DIRTY`, inspect the
+uncommitted changes:
+
+```
+cd <WORKTREE>
+git status --porcelain
+```
+
+Then confirm with the user that the changes are disposable, especially
+if the branch has no PR. Only then run:
+
+```
+git worktree remove --force <path>
+git branch -D <branch>
+```
+
+Delete branches from the main repo checkout, not from inside a removed
+worktree's path. After deletions, verify the cleanup:
+
+```
+git worktree list
+git for-each-ref --format='%(refname:short)' refs/heads/bot
+```
+
 ## Pitfalls
 
 - A requested move may already be partially satisfied. Verify against
@@ -76,9 +240,29 @@ but add these checks:
 - `git add -A` stages files like `AGENTS.md` that are sometimes mounted
   into the repo root by the environment. Stage intended files
   explicitly.
-- When a maintainer corrects or dismisses your review findings, save
-  each lesson via the memory tool (SOUL.md rule 9). Focus on
-  generalizable rules.
+- `pr-plan` worktrees start from `upstream/main`, not the PR head. If
+  the target code only exists on the PR branch, a subagent will search
+  in vain unless you rebase onto the PR head first.
+- `AGENTS.md` is replaced by a symlink to the environment mount after
+  worktree creation and after any `git checkout` that restores it. That
+  symlink shows as a type-change (`T`) in `git status` and appears in
+  `git diff` against the PR head as a deletion. Do not stage it and do
+  not let it leak into the reported diff; restore the PR's actual
+  `AGENTS.md` content with `git checkout pr-<PR>-head -- AGENTS.md` if
+  needed, then recreate the symlink without staging it.
+- When a maintainer corrects or dismisses your review findings, use
+  the `pr-learn` workflow (`learn from PR #N`). It extracts both
+  codebase facts for AGENTS.md and bot review hints for MEMORY.md,
+  and it deduplicates against existing knowledge before asking for
+  approval. Do not save review lessons manually outside that workflow.
 - When including the requestor in a PR description, use their Slack
   @username or real name — never the raw member ID (U...), which doesn't
   render on GitHub.
+- Do not patch scripts that are mounted read-only from a GitOps repo
+  (e.g. `/opt/data/scripts/worktree-sweep.py`). Route fixes through the
+  upstream GitOps PR process instead.
+- A local branch may be behind because GitHub created server-side merge
+  commits. Always run `git fetch origin && git merge --ff-only
+  origin/<branch>` before trusting local staleness readings.
+- Force-removing a dirty worktree discards uncommitted changes. Inspect
+  `git status --porcelain` and get explicit confirmation first.

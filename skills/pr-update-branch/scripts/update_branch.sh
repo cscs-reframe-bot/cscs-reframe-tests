@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
 # update_branch.sh — Sync the current bot/ branch with upstream/main
-# Usage: update_branch.sh <branch-name>
-# The branch name is the bot/ branch to update (e.g., bot/pr-660-fix-xyz).
+# Usage: update_branch.sh <branch-name> [worktree]
+#   <branch-name>: the bot/ branch to update (e.g., bot/pr-660-fix-xyz)
+#   [worktree]:    optional — the OWNING thread's worktree path. When
+#                 given, the script operates there: the worktree
+#                 already holds the branch, so no checkout and no
+#                 repo lock are needed (the worktree is private to
+#                 that thread). When omitted, the legacy flow runs:
+#                 the main worktree behind the repo lock with an
+#                 explicit checkout.
 # Behaves like GitHub's "Update branch" button: fetch, merge, push.
 # No test validation — GitHub CI covers that on push.
 set -euo pipefail
 
-REPO_DIR="/opt/data/cscs-reframe-tests"
-BRANCH="${1:?Usage: $0 <branch-name>}"
-
-cd "$REPO_DIR"
-
-# Acquire the repo lock (non-blocking). Prevents concurrent git
-# operations from different Slack sessions clobbering each other.
-source /opt/data/skills/lib/git-lock.sh
-acquire_repo_lock
+REPO_DIR="${REPO_DIR:-/opt/data/cscs-reframe-tests}"
+BRANCH="${1:?Usage: $0 <branch-name> [worktree]}"
+WORKTREE="${2:-}"
 
 # Safety: only work on bot/ branches
 if [[ "$BRANCH" != bot/* ]]; then
@@ -23,8 +24,47 @@ if [[ "$BRANCH" != bot/* ]]; then
     exit 1
 fi
 
-# Ensure we're on the right branch (quiet: the switch message is noise)
-git checkout -q "$BRANCH"
+# Self-locate the shared lib (works in the container and in local
+# checkouts alike: <script>/../../lib/ is always skills/lib/).
+# Resolve to an ABSOLUTE path before any cd below — a relative path
+# breaks once the legacy flow cd's to $REPO_DIR.
+GIT_LOCK_LIB="$(cd "$(dirname "$0")/../../lib" && pwd)/git-lock.sh"
+
+if [ -n "$WORKTREE" ]; then
+    # ── Owning-worktree flow ─────────────────────────────────────
+    # The thread's worktree already holds the branch: verify, then
+    # fetch/merge/push in place. No checkout (it is already checked
+    # out — git would refuse anyway) and no lock (the worktree is
+    # private to the thread that owns it).
+    cd "$WORKTREE"
+    current=$(git branch --show-current)
+    if [ "$current" != "$BRANCH" ]; then
+        echo "ERROR: worktree ${WORKTREE} is on '${current}', not '${BRANCH}'." >&2
+        echo "Pass the worktree that owns this branch, or omit the worktree argument for the main-repo flow." >&2
+        exit 1
+    fi
+else
+    # ── Legacy flow: main worktree behind the repo lock ──────────
+    cd "$REPO_DIR"
+
+    # Acquire the repo lock (non-blocking). Prevents concurrent git
+    # operations from different Slack sessions clobbering each other.
+    source "$GIT_LOCK_LIB"
+    acquire_repo_lock
+
+    # Ensure we're on the right branch (quiet: the switch message is
+    # noise). If this fails, the branch is most likely held by a
+    # thread worktree — git refuses cross-worktree checkouts by
+    # design (branch exclusivity).
+    if ! git checkout -q "$BRANCH"; then
+        echo >&2
+        echo "If ${BRANCH} is held by a thread worktree, git refuses the" >&2
+        echo "checkout by design (branch exclusivity). Say 'update branch'" >&2
+        echo "in the thread that owns the worktree, or use GitHub's" >&2
+        echo "'Update branch' button." >&2
+        exit 1
+    fi
+fi
 
 # Fetch upstream (quiet: the refspec update line is noise)
 git fetch -q upstream
